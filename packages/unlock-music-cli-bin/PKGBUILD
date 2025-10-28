@@ -1,0 +1,26 @@
+
+_pkgtype="-bin"
+pkgname="unlock-music-cli${_pkgtype}"
+pkgver=0.2.17
+pkgrel=1
+pkgdesc="Unlock Music Project - CLI Edition"
+arch=('x86_64' 'aarch64')
+license=('MIT')
+url="https://git.um-react.app/um/cli"
+makedepends=('tar')
+
+# 根据架构自动选包
+case "$CARCH" in
+    x86_64)  _arch=amd64 ;;
+    aarch64) _arch=arm64 ;;
+esac
+
+source=("um-linux-v${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/um-linux-${_arch}-v${pkgver}.tar.gz")
+sha256sums=('748791a962da6492f1d468b30064a83cdfe7dad02ccec913ab5f2b82366d83b2')
+
+package() {
+    tar -xf "$srcdir"/um-linux-v"$pkgver".tar.gz -C "$srcdir"
+    install -Dm755 "$srcdir/um"   "$pkgdir/usr/bin/um"
+    install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
