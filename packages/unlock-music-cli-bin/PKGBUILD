@@ -1,9 +1,9 @@
 # Maintainer: xihale <xihale.top@qq.com>
-# Contributor: parasail ikunji@duck.com
+
 _pkgtype="-bin"
 pkgname="unlock-music-cli${_pkgtype}"
 pkgver=0.2.17
-pkgrel=2
+pkgrel=1
 pkgdesc="Unlock Music Project - CLI Edition"
 arch=('x86_64' 'aarch64')
 license=('MIT')
@@ -18,6 +18,13 @@ esac
 
 source=("um-linux-v${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/um-linux-${_arch}-v${pkgver}.tar.gz")
 sha256sums=('748791a962da6492f1d468b30064a83cdfe7dad02ccec913ab5f2b82366d83b2')
+
+pkgver() {
+    git ls-remote --tags --refs https://git.um-react.app/um/cli.git \
+        | sed 's|.*/v\(.*\)|\1|' \
+        | sort -V \
+        | tail -n 1
+}
 
 package() {
     tar -xf "$srcdir"/um-linux-v"$pkgver".tar.gz -C "$srcdir"
