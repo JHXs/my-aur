@@ -22,24 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 保留完整历史以便 diff
+          fetch-depth: 2  
 
-      - id: set-matrix
+      - name: Set Changed Packages Matrix
+        id: set-matrix
         run: |
           set -e
-
-          # 确保完整历史
-          git fetch --prune --unshallow || true
-          git fetch origin main || true
-
-          # 如果 origin/main 存在，则基于它 diff；否则用上一个 commit 比较
-          if git rev-parse --verify origin/main >/dev/null 2>&1; then
-            base_ref=origin/main
-          else
-            base_ref=HEAD^
-          fi
-
-          changed=$(git diff --name-only "$base_ref"...HEAD -- 'packages/*/PKGBUILD' | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
+          changed=$(git diff --name-only HEAD^..HEAD -- 'packages/*/PKGBUILD' | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
           echo "Detected changed packages: $changed"
           echo "matrix=$changed" >> $GITHUB_OUTPUT
 
