@@ -62,13 +62,16 @@ jobs:
               cd "/src/${{ matrix.pkgdir }}"
 
               su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild"
-
-              arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
+              
+              rm -f *-debug-*.pkg.tar.zst
+              
+              pkgfile=$(ls *.pkg.tar.zst | head -n1)
+              arch=$(tar -xOf "$pkgfile" .PKGINFO | grep "^arch = " | cut -d" " -f3)
               [ "$arch" = "any" ] && target="any" || target="x86_64"
+              
               workdir="/tmp/repo-$target"
               mkdir -p "$workdir"
               cp *.pkg.tar.zst "$workdir"
-              rm -f "$workdir"/*-debug-*.pkg.tar.zst
 
               # 清理旧版本，只保留最新版本
               cd "$workdir"
