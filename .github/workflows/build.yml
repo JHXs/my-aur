@@ -36,47 +36,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 唯一关键步骤：用非 root 用户跑 makepkg
-      - name: Build package
+      # =====  编译 + 索引 + 上传 一条龙  =====
+      - name: Build & repo-add & Push to R2
         run: |
           docker run --rm -v "$PWD":/src -w /src \
+            -e BUCKET -e ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
             archlinux:latest bash -ec '
+              set -e
               pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel sudo git
+              pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
               useradd -m -G wheel build
               echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-              # 把整棵源码树交给 build 用户
               chown -R build:build /src
               cd /src/${{ matrix.pkgdir }}
+
+              # 1. 编译
               su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg"
+
+              # 2. 取架构
+              arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
+              [ "$arch" = "any" ] && target="any" || target="x86_64"
+              workdir="/tmp/repo-$target"
+              mkdir -p "$workdir"
+
+              # 3. 如果有旧 db 就拉回（空桶时静默跳过）
+              rclone config create r2 s3 provider=Cloudflare \
+                    access_key_id=$AWS_ACCESS_KEY_ID \
+                    secret_access_key=$AWS_SECRET_ACCESS_KEY \
+                    endpoint=$ENDPOINT
+              rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz"     "$workdir/" 2>/dev/null || true
+              rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" 2>/dev/null || true
+
+              # 4. 加入新包并更新索引
+              cp *.pkg.tar.zst "$workdir/"
+              repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
+
+              # 5. 推回 R2
+              rclone copy "$workdir/" "r2:$BUCKET/$target/" --progress
             '
-          # 只取普通包（排除 *-debug-*.pkg.tar.zst）
-          pkg=$(find ${{ matrix.pkgdir }} -name "*.pkg.tar.zst" ! -name "*-debug-*" -printf '%f\n' | head -n1)
-          # 确保无空格、括号等特殊字符破坏 env 文件
-          echo "PKG<<EOF" >> $GITHUB_ENV
-          echo "$pkg" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Install rclone
-        run: sudo apt install -y rclone
-
-      - name: Push to R2
-        run: |
-          # 1. 修正 tar 参数；2. 用 /tmp 避开权限问题
-          arch=$(tar -xOf "${{ matrix.pkgdir }}/${{ env.PKG }}" .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
-          [ "$arch" = "any" ] && target="any" || target="x86_64"
-          workdir="/tmp/repo-$target"
-          mkdir -p "$workdir"
-
-          rclone config create r2 s3 provider=Cloudflare \
-                access_key_id=$AWS_ACCESS_KEY_ID \
-                secret_access_key=$AWS_SECRET_ACCESS_KEY \
-                endpoint=$ENDPOINT
-
-          rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz"     "$workdir/" 2>/dev/null || true
-          rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" 2>/dev/null || true
-          
-          cp "${{ matrix.pkgdir }}/${{ env.PKG }}" "$workdir/"
-          repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
-
-          rclone copy "$workdir/" "r2:$BUCKET/$target/" --progress
