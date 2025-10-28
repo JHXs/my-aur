@@ -63,7 +63,8 @@ jobs:
               rclone config create r2 s3 provider=Cloudflare \
                     access_key_id=$AWS_ACCESS_KEY_ID \
                     secret_access_key=$AWS_SECRET_ACCESS_KEY \
-                    endpoint=$ENDPOINT
+                    endpoint=$ENDPOINT \
+                    --s3-no-check-bucket
               rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz"     "$workdir/" 2>/dev/null || true
               rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" 2>/dev/null || true
 
@@ -72,5 +73,5 @@ jobs:
               repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
               # 5. 推回 R2
-              rclone copy "$workdir/" "r2:$BUCKET/$target/" --progress
+              rclone copy "$workdir/" "r2:$BUCKET/$target/" --s3-no-check-bucket --progress
             '
