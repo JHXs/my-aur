@@ -62,15 +62,21 @@ jobs:
 
       - name: Push to R2
         run: |
+          # 1. 修正 tar 参数；2. 用 /tmp 避开权限问题
+          arch=$(tar -xOf "${{ matrix.pkgdir }}/${{ env.PKG }}" .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
+          [ "$arch" = "any" ] && target="any" || target="x86_64"
+          workdir="/tmp/repo-$target"
+          mkdir -p "$workdir"
+
           rclone config create r2 s3 provider=Cloudflare \
                 access_key_id=$AWS_ACCESS_KEY_ID \
                 secret_access_key=$AWS_SECRET_ACCESS_KEY \
                 endpoint=$ENDPOINT
-          arch=$(tar -xfO "${{ matrix.pkgdir }}/${{ env.PKG }}" .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
-          [ "$arch" = "any" ] && target="any" || target="x86_64"
-          mkdir -p repo/$target
-          rclone copy r2:$BUCKET/$target/$BUCKET.db.tar.gz repo/$target/ || true
-          rclone copy r2:$BUCKET/$target/$BUCKET.files.tar.gz repo/$target/ || true
-          cp "${{ matrix.pkgdir }}/${{ env.PKG }}" repo/$target/
-          repo-add -n -R repo/$target/$BUCKET.db.tar.gz repo/$target/*.pkg.tar.zst
-          rclone copy repo/$target/ r2:$BUCKET/$target/ --progress
+
+          rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz" "$workdir/" || true
+          rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" || true
+
+          cp "${{ matrix.pkgdir }}/${{ env.PKG }}" "$workdir/"
+          repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
+
+          rclone copy "$workdir/" "r2:$BUCKET/$target/" --progress
