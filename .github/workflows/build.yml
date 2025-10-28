@@ -23,7 +23,6 @@ jobs:
           fetch-depth: 2
       - id: set-matrix
         run: |
-          # 找出本次 push 改动的包目录
           changed=$(git diff --name-only HEAD^..HEAD -- packages/*/PKGBUILD | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$changed" >> $GITHUB_OUTPUT
 
@@ -37,19 +36,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Arch bootstrap
+      # 1) 用官方 Arch 镜像编译 ==========================
+      - name: Build package in Arch Docker
         run: |
-          sudo apt update
-          sudo apt install -y systemd-container
-          curl -L https://tinyurl.com/arch-bootstrap | sudo bash -s . /tmp/arch
-          echo "/tmp/arch/usr/bin" >> $GITHUB_PATH
+          docker run --rm -v $PWD:/src -w /src \
+            archlinux:latest bash -ec '
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel sudo
+              cd ${{ matrix.pkgdir }}
+              makepkg --syncdeps --noconfirm --cleanbuild --skipinteg
+            '
+          echo "PKG=$(find ${{ matrix.pkgdir }} -name "*.pkg.tar.zst" -printf '%f\n')" >> $GITHUB_ENV
 
-      - name: Build package
-        run: |
-          cd ${{ matrix.pkgdir }}
-          makepkg --syncdeps --noconfirm --cleanbuild --skipinteg
-          echo "PKG=$(echo *.pkg.tar.zst)" >> $GITHUB_ENV
-
+      # 2) 后续流程不变 ==================================
       - name: Install rclone
         run: sudo apt install -y rclone
 
@@ -59,11 +58,11 @@ jobs:
                 access_key_id=$AWS_ACCESS_KEY_ID \
                 secret_access_key=$AWS_SECRET_ACCESS_KEY \
                 endpoint=$ENDPOINT
-          arch=$(tar -xfO "${{ env.PKG }}" .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
+          arch=$(tar -xfO "${{ matrix.pkgdir }}/${{ env.PKG }}" .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
           [ "$arch" = "any" ] && target="any" || target="x86_64"
           mkdir -p repo/$target
           rclone copy r2:$BUCKET/$target/$BUCKET.db.tar.gz repo/$target/ || true
           rclone copy r2:$BUCKET/$target/$BUCKET.files.tar.gz repo/$target/ || true
-          cp "${{ env.PKG }}" repo/$target/
+          cp "${{ matrix.pkgdir }}/${{ env.PKG }}" repo/$target/
           repo-add -n -R repo/$target/$BUCKET.db.tar.gz repo/$target/*.pkg.tar.zst
           rclone copy repo/$target/ r2:$BUCKET/$target/ --progress
