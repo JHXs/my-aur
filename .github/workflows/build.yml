@@ -84,6 +84,7 @@ jobs:
 
               repo-add -n -R "$workdir/$REPO.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
+              rm -f "$REPO.db" "$REPO.files"
               cp "$REPO.db.tar.gz" "$REPO.db"
               cp "$REPO.files.tar.gz" "$REPO.files"
 
