@@ -36,19 +36,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) 用官方 Arch 镜像编译 ==========================
-      - name: Build package in Arch Docker
+      # 唯一关键步骤：用非 root 用户跑 makepkg
+      - name: Build package
         run: |
-          docker run --rm -v $PWD:/src -w /src \
+          docker run --rm -v "$PWD":/src -w /src \
             archlinux:latest bash -ec '
               pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel sudo
-              cd ${{ matrix.pkgdir }}
-              makepkg --syncdeps --noconfirm --cleanbuild --skipinteg
+              pacman -S --noconfirm base-devel sudo git
+              useradd -m -G wheel build
+              echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+              cd /src/${{ matrix.pkgdir }}
+              su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg"
             '
           echo "PKG=$(find ${{ matrix.pkgdir }} -name "*.pkg.tar.zst" -printf '%f\n')" >> $GITHUB_ENV
 
-      # 2) 后续流程不变 ==================================
       - name: Install rclone
         run: sudo apt install -y rclone
 
