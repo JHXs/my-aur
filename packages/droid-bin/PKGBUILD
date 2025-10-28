@@ -1,6 +1,6 @@
 # Maintainer: Your Name <your.email@example.com>
 pkgname=droid-bin
-pkgver=0.22.3
+pkgver=0.22.4
 pkgrel=1
 pkgdesc="Factory CLI tool for AI development"
 arch=('x86_64' 'aarch64')
@@ -33,7 +33,7 @@ source=("droid::${_source_url}"
         "rg::${_rg_url}")
 
 # If you want to include checksums, run makepkg -g after first download
-sha256sums=('ce82db6753841f6c3cd725ebd23667b00ca873e0c8473f12b7ae77a21a32f148'
+sha256sums=('364f4bad17e4af27c4310a7b8661bf51ea5b249cd7d45f3d153b7403f2bff786'
             'be2476c976342b9216611b4a84c1bc2ec6488ec5c791ea019a132727644ef19c')
 
 package() {
