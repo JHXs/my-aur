@@ -7,8 +7,8 @@ on:
       - 'packages/**/PKGBUILD'
 
 env:
-  BUCKET: aurrepo
-  ENDPOINT: https://<account-id>.r2.dev
+  BUCKET: aur-repo
+  ENDPOINT: https://pub-c388a4aca5ea4050a0afd58c60a78cb3.r2.dev
   AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
 
