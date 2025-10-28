@@ -3,7 +3,7 @@
 _pkgtype="-bin"
 pkgname="unlock-music-cli${_pkgtype}"
 pkgver=0.2.17
-pkgrel=2
+pkgrel=1
 pkgdesc="Unlock Music Project - CLI Edition"
 arch=('x86_64' 'aarch64')
 license=('MIT')

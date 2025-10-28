@@ -73,9 +73,9 @@ jobs:
                 secret_access_key=$AWS_SECRET_ACCESS_KEY \
                 endpoint=$ENDPOINT
 
-          rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz" "$workdir/" || true
-          rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" || true
-
+          rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz"     "$workdir/" 2>/dev/null || true
+          rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" 2>/dev/null || true
+          
           cp "${{ matrix.pkgdir }}/${{ env.PKG }}" "$workdir/"
           repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
