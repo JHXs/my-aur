@@ -50,7 +50,12 @@ jobs:
               cd /src/${{ matrix.pkgdir }}
               su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg"
             '
-          echo "PKG=$(find ${{ matrix.pkgdir }} -name "*.pkg.tar.zst" -printf '%f\n')" >> $GITHUB_ENV
+          # 只取普通包（排除 *-debug-*.pkg.tar.zst）
+          pkg=$(find ${{ matrix.pkgdir }} -name "*.pkg.tar.zst" ! -name "*-debug-*" -printf '%f\n' | head -n1)
+          # 确保无空格、括号等特殊字符破坏 env 文件
+          echo "PKG<<EOF" >> $GITHUB_ENV
+          echo "$pkg" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Install rclone
         run: sudo apt install -y rclone

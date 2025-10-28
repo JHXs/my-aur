@@ -1,4 +1,4 @@
-
+# Maintainer: parasail ikunji@duck.com
 _pkgtype="-bin"
 pkgname="unlock-music-cli${_pkgtype}"
 pkgver=0.2.17
