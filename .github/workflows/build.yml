@@ -45,13 +45,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 缓存 pacman 软件包，加快构建速度
-      - name: Cache Pacman packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pacman/pkg
-          key: ${{ runner.os }}-pacman
-
       - name: Build Package in Arch Container
         run: |
           docker run --rm -v "$PWD":/src -w /src \
@@ -68,19 +61,21 @@ jobs:
 
               cd "/src/${{ matrix.pkgdir }}"
 
-              su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild --nodebug"
+              su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild"
 
               arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
               [ "$arch" = "any" ] && target="any" || target="x86_64"
               workdir="/tmp/repo-$target"
               mkdir -p "$workdir"
               cp *.pkg.tar.zst "$workdir"
+              rm -f "$workdir"/*-debug-*.pkg.tar.zst
 
-              rclone config create r2 s3 provider=Cloudflare env_auth=true endpoint="$ENDPOINT"
-
+              # 清理旧版本，只保留最新版本
               cd "$workdir"
               pkgname=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^pkgname = " | cut -d" " -f3)
               ls ${pkgname}-*.pkg.tar.zst | sort -Vr | tail -n +2 | xargs -r rm -f
+
+              rclone config create r2 s3 provider=Cloudflare env_auth=true endpoint="$ENDPOINT"
 
               rclone copy "r2:$BUCKET/$target" "$workdir" || true
 
@@ -91,7 +86,6 @@ jobs:
 
               rclone copy "$workdir" "r2:$BUCKET/$target" --progress
             '
-
 
       # 构建产物存档（可选）
       - name: Upload Package Artifact
