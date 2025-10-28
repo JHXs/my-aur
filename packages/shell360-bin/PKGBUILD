@@ -22,7 +22,7 @@ pkgver() {
 }
 
 package() {
-    # 1. 用 bsdtar 解包 .deb（ar + tar）
+    # 用 bsdtar 解包 .deb（ar + tar）
     bsdtar -xf data.tar.gz -C "${pkgdir}"
     chmod 755 "${pkgdir}/usr/bin/shell360"
 }

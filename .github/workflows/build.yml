@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'packages/**/PKGBUILD'
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 env:
   BUCKET: aur-repo
@@ -15,92 +15,100 @@ env:
 
 jobs:
   list:
+    name: Detect Changed Packages
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0  # 保留完整历史以便 diff
+
       - id: set-matrix
         run: |
-          changed=$(git diff --name-only HEAD^..HEAD -- packages/*/PKGBUILD | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
+          # 检测相对于 main 分支变更的 PKGBUILD 文件
+          git fetch origin main
+          changed=$(git diff --name-only origin/main...HEAD -- 'packages/*/PKGBUILD' | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
+          echo "Detected changed packages: $changed"
           echo "matrix=$changed" >> $GITHUB_OUTPUT
 
   build:
+    name: Build & Upload Packages
     needs: list
     if: needs.list.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         pkgdir: ${{ fromJson(needs.list.outputs.matrix) }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build & Update Repository
+      # 缓存 pacman 软件包，加快构建速度
+      - name: Cache Pacman packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pacman/pkg
+          key: ${{ runner.os }}-pacman
+
+      - name: Build Package in Arch Container
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             -e BUCKET -e ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
-            archlinux:latest bash -ec '
-              set -e
-              pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
+            archlinux:latest bash <<'EOF'
+            set -euxo pipefail
 
-              # 设置构建用户
-              useradd -m -G wheel build
-              echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-              chown -R build:build /src
+            # 更新系统并安装依赖
+            pacman -Syu --noconfirm
+            pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
 
-              cd "/src/${{ matrix.pkgdir }}"
+            # 创建构建用户
+            useradd -m -G wheel build
+            echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+            chown -R build:build /src
 
-              # 1. 构建软件包
-              su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg  --nodebug"
+            cd "/src/${{ matrix.pkgdir }}"
 
-              # 2. 确定目标架构目录
-              arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
-              [ "$arch" = "any" ] && target="any" || target="x86_64"
-              workdir="/tmp/repo-$target"
-              mkdir -p "$workdir"
+            # 构建软件包（完整校验）
+            su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild --nodebug"
 
-              # 3. 配置rclone
-              rclone config create r2 s3 provider=Cloudflare \
-                access_key_id="$AWS_ACCESS_KEY_ID" \
-                secret_access_key="$AWS_SECRET_ACCESS_KEY" \
-                endpoint="$ENDPOINT" --s3-no-check-bucket
+            # 解析架构
+            arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
+            [ "$arch" = "any" ] && target="any" || target="x86_64"
+            workdir="/tmp/repo-$target"
+            mkdir -p "$workdir"
+            cp *.pkg.tar.zst "$workdir"
 
-              # 4. 下载现有的仓库数据库（如果有）
-              if rclone ls "r2:$BUCKET/$target/$BUCKET.db" >/dev/null 2>&1; then
-                echo "下载现有仓库数据库..."
-                rclone copy "r2:$BUCKET/$target/$BUCKET.db" "$workdir/" --s3-no-check-bucket
-                rclone copy "r2:$BUCKET/$target/$BUCKET.files" "$workdir/" --s3-no-check-bucket
-              elif rclone ls "r2:$BUCKET/$target/$BUCKET.db.tar.gz" >/dev/null 2>&1; then
-                echo "下载旧格式的仓库数据库..."
-                rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz" "$workdir/" --s3-no-check-bucket
-                rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" --s3-no-check-bucket
-                # 转换旧格式
-                cd "$workdir"
-                [ -f "$BUCKET.db.tar.gz" ] && ln -sf "$BUCKET.db.tar.gz" "$BUCKET.db"
-                [ -f "$BUCKET.files.tar.gz" ] && ln -sf "$BUCKET.files.tar.gz" "$BUCKET.files"
-              else
-                echo "未找到现有仓库数据库，将创建新仓库"
-              fi
+            # 配置 rclone (Cloudflare R2)
+            rclone config create r2 s3 provider=Cloudflare env_auth=true endpoint="$ENDPOINT"
 
-              # 5. 复制新构建的软件包
-              cd "/src/${{ matrix.pkgdir }}"
-              cp *.pkg.tar.zst "$workdir/"
+            # 清理旧版本，仅保留最新
+            cd "$workdir"
+            pkgname=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep '^pkgname = ' | cut -d' ' -f3)
+            ls ${pkgname}-*.pkg.tar.zst | sort -Vr | tail -n +2 | xargs -r rm -f
 
-              # 6. 更新仓库数据库
-              cd "$workdir"
-              repo-add -n -R "$BUCKET.db.tar.gz" *.pkg.tar.zst
+            # 下载当前仓库索引
+            rclone copy "r2:$BUCKET/$target" "$workdir" || true
 
-              # 7. 确保符号链接存在（pacman需要的格式）
-              ln -sf "$BUCKET.db.tar.gz" "$BUCKET.db" || true
-              ln -sf "$BUCKET.files.tar.gz" "$BUCKET.files" || true
+            # 更新 repo.db / repo.files
+            repo-add -n -R "$workdir/hanselaur.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
-              # 8. 验证生成的文件
-              echo "生成的文件："
-              ls -la "$workdir/"
+            ln -sf hanselaur.db.tar.gz hanselaur.db
+            ln -sf hanselaur.files.tar.gz hanselaur.files
 
-              # 9. 上传到R2
-              rclone copy "$workdir/" "r2:$BUCKET/$target/" --s3-no-check-bucket --progress --copy-links
-            '
+            # 上传到 R2
+            rclone copy "$workdir" "r2:$BUCKET/$target" --progress
+          EOF
+
+      # 构建产物存档（可选）
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.pkgdir }}-pkg
+          path: ${{ matrix.pkgdir }}/*.pkg.tar.zst
+
+      # 失败通知（控制台输出或可替换为 Telegram/Discord）
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Build failed for package: ${{ matrix.pkgdir }}"
