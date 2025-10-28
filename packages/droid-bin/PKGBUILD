@@ -32,7 +32,7 @@ _rg_url="https://downloads.factory.ai/ripgrep/linux/${_arch}/rg"
 source=("droid::${_source_url}"
         "rg::${_rg_url}")
 
-# If you want to include checksums, run makepkg -g after first download
+# If you want to include checksums, run makepkg -g after first download.
 sha256sums=('364f4bad17e4af27c4310a7b8661bf51ea5b249cd7d45f3d153b7403f2bff786'
             'be2476c976342b9216611b4a84c1bc2ec6488ec5c791ea019a132727644ef19c')
 
