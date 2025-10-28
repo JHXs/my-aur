@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 env:
+  REPO: hanselaur
   BUCKET: aur-repo
   ENDPOINT: ${{ secrets.R2_ENDPOINT }}
   AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
@@ -54,51 +55,43 @@ jobs:
       - name: Build Package in Arch Container
         run: |
           docker run --rm -v "$PWD":/src -w /src \
-            -e BUCKET -e ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
-            archlinux:latest bash <<'EOF'
-            set -euxo pipefail
+            -e REPO -e BUCKET -e ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            archlinux:latest bash -c '
+              set -euxo pipefail
 
-            # 更新系统并安装依赖
-            pacman -Syu --noconfirm
-            pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
 
-            # 创建构建用户
-            useradd -m -G wheel build
-            echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-            chown -R build:build /src
+              useradd -m -G wheel build
+              echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+              chown -R build:build /src
 
-            cd "/src/${{ matrix.pkgdir }}"
+              cd "/src/${{ matrix.pkgdir }}"
 
-            # 构建软件包（完整校验）
-            su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild --nodebug"
+              su build -c "makepkg --syncdeps --noconfirm --clean --cleanbuild --nodebug"
 
-            # 解析架构
-            arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep '^arch = ' | cut -d' ' -f3)
-            [ "$arch" = "any" ] && target="any" || target="x86_64"
-            workdir="/tmp/repo-$target"
-            mkdir -p "$workdir"
-            cp *.pkg.tar.zst "$workdir"
+              arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
+              [ "$arch" = "any" ] && target="any" || target="x86_64"
+              workdir="/tmp/repo-$target"
+              mkdir -p "$workdir"
+              cp *.pkg.tar.zst "$workdir"
 
-            # 配置 rclone (Cloudflare R2)
-            rclone config create r2 s3 provider=Cloudflare env_auth=true endpoint="$ENDPOINT"
+              rclone config create r2 s3 provider=Cloudflare env_auth=true endpoint="$ENDPOINT"
 
-            # 清理旧版本，仅保留最新
-            cd "$workdir"
-            pkgname=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep '^pkgname = ' | cut -d' ' -f3)
-            ls ${pkgname}-*.pkg.tar.zst | sort -Vr | tail -n +2 | xargs -r rm -f
+              cd "$workdir"
+              pkgname=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^pkgname = " | cut -d" " -f3)
+              ls ${pkgname}-*.pkg.tar.zst | sort -Vr | tail -n +2 | xargs -r rm -f
 
-            # 下载当前仓库索引
-            rclone copy "r2:$BUCKET/$target" "$workdir" || true
+              rclone copy "r2:$BUCKET/$target" "$workdir" || true
 
-            # 更新 repo.db / repo.files
-            repo-add -n -R "$workdir/hanselaur.db.tar.gz" "$workdir"/*.pkg.tar.zst
+              repo-add -n -R "$workdir/$REPO.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
-            ln -sf hanselaur.db.tar.gz hanselaur.db
-            ln -sf hanselaur.files.tar.gz hanselaur.files
+              ln -sf $REPO.db.tar.gz $REPO.db
+              ln -sf $REPO.files.tar.gz $REPO.files
 
-            # 上传到 R2
-            rclone copy "$workdir" "r2:$BUCKET/$target" --progress
-          EOF
+              rclone copy "$workdir" "r2:$BUCKET/$target" --progress
+            '
+
 
       # 构建产物存档（可选）
       - name: Upload Package Artifact

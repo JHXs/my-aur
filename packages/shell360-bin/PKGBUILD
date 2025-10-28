@@ -15,7 +15,7 @@ source=("${pkgname%-bin}-${pkgver}-amd64.deb::${_source_url}")
 sha256sums=('3053737696c86b44e362e5385803f6b4d984ccca1fafdfdc5628efaf1015697c')
 
 pkgver() {
-    # 抓取最新 tag，去掉 v 前缀.
+    # 抓取最新 tag，去掉 v 前缀
     curl -s "https://api.github.com/repos/nashaofu/shell360/releases/latest" \
         | grep -oP '"tag_name":\s*"\Kv[^"]+' \
         | sed 's/^v//'
