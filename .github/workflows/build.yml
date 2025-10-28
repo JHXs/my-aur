@@ -1,14 +1,15 @@
-name: Build & Publish
+name: Build and Deploy AUR Repository
 
 on:
   push:
     branches: [main]
     paths:
       - 'packages/**/PKGBUILD'
+  workflow_dispatch:  # 允许手动触发
 
 env:
   BUCKET: aur-repo
-  ENDPOINT: https://638815f23f9f434d94d64736c4e08175.r2.cloudflarestorage.com
+  ENDPOINT: ${{ secrets.R2_ENDPOINT }}
   AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
 
@@ -36,8 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # =====  编译 + 索引 + 上传 一条龙  =====
-      - name: Build & repo-add & Push to R2
+      - name: Build & Update Repository
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             -e BUCKET -e ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
@@ -45,33 +45,62 @@ jobs:
               set -e
               pacman -Syu --noconfirm
               pacman -S --noconfirm base-devel sudo git pacman-contrib rclone
+
+              # 设置构建用户
               useradd -m -G wheel build
               echo "build ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
               chown -R build:build /src
-              cd /src/${{ matrix.pkgdir }}
 
-              # 1. 编译
+              cd "/src/${{ matrix.pkgdir }}"
+
+              # 1. 构建软件包
               su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg"
 
-              # 2. 取架构
+              # 2. 确定目标架构目录
               arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
               [ "$arch" = "any" ] && target="any" || target="x86_64"
               workdir="/tmp/repo-$target"
               mkdir -p "$workdir"
 
-              # 3. 如果有旧 db 就拉回（空桶时静默跳过）
+              # 3. 配置rclone
               rclone config create r2 s3 provider=Cloudflare \
-                    access_key_id=$AWS_ACCESS_KEY_ID \
-                    secret_access_key=$AWS_SECRET_ACCESS_KEY \
-                    endpoint=$ENDPOINT \
-                    --s3-no-check-bucket
-              rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz"     "$workdir/" 2>/dev/null || true
-              rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" 2>/dev/null || true
+                access_key_id="$AWS_ACCESS_KEY_ID" \
+                secret_access_key="$AWS_SECRET_ACCESS_KEY" \
+                endpoint="$ENDPOINT" --s3-no-check-bucket
 
-              # 4. 加入新包并更新索引
+              # 4. 下载现有的仓库数据库（如果有）
+              if rclone ls "r2:$BUCKET/$target/$BUCKET.db" >/dev/null 2>&1; then
+                echo "下载现有仓库数据库..."
+                rclone copy "r2:$BUCKET/$target/$BUCKET.db" "$workdir/" --s3-no-check-bucket
+                rclone copy "r2:$BUCKET/$target/$BUCKET.files" "$workdir/" --s3-no-check-bucket
+              elif rclone ls "r2:$BUCKET/$target/$BUCKET.db.tar.gz" >/dev/null 2>&1; then
+                echo "下载旧格式的仓库数据库..."
+                rclone copy "r2:$BUCKET/$target/$BUCKET.db.tar.gz" "$workdir/" --s3-no-check-bucket
+                rclone copy "r2:$BUCKET/$target/$BUCKET.files.tar.gz" "$workdir/" --s3-no-check-bucket
+                # 转换旧格式
+                cd "$workdir"
+                [ -f "$BUCKET.db.tar.gz" ] && ln -sf "$BUCKET.db.tar.gz" "$BUCKET.db"
+                [ -f "$BUCKET.files.tar.gz" ] && ln -sf "$BUCKET.files.tar.gz" "$BUCKET.files"
+              else
+                echo "未找到现有仓库数据库，将创建新仓库"
+              fi
+
+              # 5. 复制新构建的软件包
+              cd "/src/${{ matrix.pkgdir }}"
               cp *.pkg.tar.zst "$workdir/"
-              repo-add -n -R "$workdir/$BUCKET.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
-              # 5. 推回 R2
-              rclone copy "$workdir/" "r2:$BUCKET/$target/" --s3-no-check-bucket --progress
+              # 6. 更新仓库数据库
+              cd "$workdir"
+              repo-add -n -R "$BUCKET.db.tar.gz" *.pkg.tar.zst
+
+              # 7. 确保符号链接存在（pacman需要的格式）
+              ln -sf "$BUCKET.db.tar.gz" "$BUCKET.db" || true
+              ln -sf "$BUCKET.files.tar.gz" "$BUCKET.files" || true
+
+              # 8. 验证生成的文件
+              echo "生成的文件："
+              ls -la "$workdir/"
+
+              # 9. 上传到R2
+              rclone copy "$workdir/" "r2:$BUCKET/$target/" --s3-no-check-bucket --progress --copy-links
             '
