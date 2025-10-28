@@ -54,7 +54,7 @@ jobs:
               cd "/src/${{ matrix.pkgdir }}"
 
               # 1. 构建软件包
-              su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg"
+              su build -c "makepkg --syncdeps --noconfirm --cleanbuild --skipinteg  --nodebug"
 
               # 2. 确定目标架构目录
               arch=$(tar -xOf *.pkg.tar.zst .PKGINFO | grep "^arch = " | cut -d" " -f3)
