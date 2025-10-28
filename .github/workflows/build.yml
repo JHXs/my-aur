@@ -26,16 +26,27 @@ jobs:
 
       - id: set-matrix
         run: |
-          # 检测相对于 main 分支变更的 PKGBUILD 文件
-          git fetch origin main
-          changed=$(git diff --name-only origin/main...HEAD -- 'packages/*/PKGBUILD' | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
+          set -e
+
+          # 确保完整历史
+          git fetch --prune --unshallow || true
+          git fetch origin main || true
+
+          # 如果 origin/main 存在，则基于它 diff；否则用上一个 commit 比较
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            base_ref=origin/main
+          else
+            base_ref=HEAD^
+          fi
+
+          changed=$(git diff --name-only "$base_ref"...HEAD -- 'packages/*/PKGBUILD' | xargs -r dirname | jq -R -s -c 'split("\n")[:-1]')
           echo "Detected changed packages: $changed"
           echo "matrix=$changed" >> $GITHUB_OUTPUT
 
   build:
     name: Build & Upload Packages
     needs: list
-    if: needs.list.outputs.matrix != '[]'
+    if: needs.list.outputs.matrix != '[]' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       matrix:
