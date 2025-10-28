@@ -84,21 +84,14 @@ jobs:
 
               repo-add -n -R "$workdir/$REPO.db.tar.gz" "$workdir"/*.pkg.tar.zst
 
-              ln -sf "$REPO.db.tar.gz" "$REPO.db" || true
-              ln -sf "$REPO.files.tar.gz" "$REPO.files" || true
+              cp "$REPO.db.tar.gz" "$REPO.db"
+              cp "$REPO.files.tar.gz" "$REPO.files"
 
               echo "生成的文件："
               ls -la "$workdir/"
 
               rclone copy "$workdir" "r2:$BUCKET/$target" --progress
             '
-
-      # 构建产物存档（可选）
-      - name: Upload Package Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.pkgdir }}-pkg
-          path: ${{ matrix.pkgdir }}/*.pkg.tar.zst
 
       # 失败通知（控制台输出或可替换为 Telegram/Discord）
       - name: Notify on Failure
