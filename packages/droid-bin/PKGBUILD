@@ -1,0 +1,52 @@
+# Maintainer: Your Name <your.email@example.com>
+pkgname=droid-bin
+pkgver=0.22.3
+pkgrel=1
+pkgdesc="Factory CLI tool for AI development"
+arch=('x86_64' 'aarch64')
+url="https://factory.ai"
+license=('MIT')
+depends=('glibc')
+provides=('droid')
+conflicts=('droid')
+options=('!strip')
+
+# Determine architecture
+if [ "$CARCH" = "x86_64" ]; then
+    _arch="x64"
+elif [ "$CARCH" = "aarch64" ]; then
+    _arch="arm64"
+fi
+
+pkgver() {
+    # Extract version from the installation script
+    local install_script="https://app.factory.ai/cli"
+    local version=$(curl -fsSL "$install_script" | grep 'VER="' | head -1 | sed 's/.*VER="//' | sed 's/"$//')
+    echo "$version"
+}
+
+# Initial source URLs with placeholder version
+_source_url="https://downloads.factory.ai/factory-cli/releases/${pkgver}/linux/${_arch}/droid"
+_rg_url="https://downloads.factory.ai/ripgrep/linux/${_arch}/rg"
+
+source=("droid::${_source_url}"
+        "rg::${_rg_url}")
+
+# If you want to include checksums, run makepkg -g after first download
+sha256sums=('ce82db6753841f6c3cd725ebd23667b00ca873e0c8473f12b7ae77a21a32f148'
+            'be2476c976342b9216611b4a84c1bc2ec6488ec5c791ea019a132727644ef19c')
+
+package() {
+    # Create directories
+    install -dm755 "$pkgdir/usr/bin"
+    install -dm755 "$pkgdir/usr/lib/factory/bin"
+
+    # Install droid binary
+    install -m755 "$srcdir/droid" "$pkgdir/usr/bin/droid"
+
+    # Install rg binary
+    install -m755 "$srcdir/rg" "$pkgdir/usr/lib/factory/bin/rg"
+
+    # Create symlink for rg in PATH if desired
+    # ln -sf /usr/lib/factory/bin/rg "$pkgdir/usr/bin/rg"
+}

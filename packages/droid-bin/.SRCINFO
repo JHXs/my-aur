@@ -1,0 +1,18 @@
+pkgbase = droid-bin
+	pkgdesc = Factory CLI tool for AI development
+	pkgver = 0.22.3
+	pkgrel = 1
+	url = https://factory.ai
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	depends = glibc
+	provides = droid
+	conflicts = droid
+	options = !strip
+	source = droid::https://downloads.factory.ai/factory-cli/releases/0.22.3/linux/x64/droid
+	source = rg::https://downloads.factory.ai/ripgrep/linux/x64/rg
+	sha256sums = ce82db6753841f6c3cd725ebd23667b00ca873e0c8473f12b7ae77a21a32f148
+	sha256sums = be2476c976342b9216611b4a84c1bc2ec6488ec5c791ea019a132727644ef19c
+
+pkgname = droid-bin
